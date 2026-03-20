@@ -1,0 +1,338 @@
+/* ==========================================================================
+   Pokemon Infinite Fusion — Web Shell Styles
+   ========================================================================== */
+
+:root {
+    --bg-dark: #1a1a2e;
+    --bg-darker: #16213e;
+    --accent: #e94560;
+    --accent-glow: #ff6b81;
+    --text-primary: #eee;
+    --text-secondary: #aaa;
+    --progress-bg: #2a2a4a;
+    --progress-fill: linear-gradient(90deg, #e94560, #ff6b81);
+    --toolbar-bg: rgba(0, 0, 0, 0.6);
+    --canvas-bg: #000;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--canvas-bg);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text-primary);
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ==========================================================================
+   Loading Overlay
+   ========================================================================== */
+
+#loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-dark);
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+
+#loading-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+#loading-container {
+    text-align: center;
+    max-width: 480px;
+    padding: 2rem;
+}
+
+#loading-title {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    background: linear-gradient(135deg, #e94560, #ff6b81, #ffd93d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+#loading-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 2rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+/* Progress bar */
+#progress-container {
+    margin: 1.5rem 0;
+}
+
+#progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--progress-bg);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+#progress-fill {
+    width: 0%;
+    height: 100%;
+    background: var(--progress-fill);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+#progress-text {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+#loading-details {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    min-height: 1.2em;
+}
+
+/* Error display */
+#error-container {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: rgba(233, 69, 96, 0.1);
+    border: 1px solid rgba(233, 69, 96, 0.3);
+    border-radius: 8px;
+}
+
+#error-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+#error-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+}
+
+#error-message {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    word-break: break-word;
+}
+
+#error-retry {
+    padding: 0.6rem 1.5rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#error-retry:hover {
+    background: var(--accent-glow);
+}
+
+/* Compatibility warning */
+#compat-warning {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    max-width: 400px;
+}
+
+/* ==========================================================================
+   Game Canvas
+   ========================================================================== */
+
+#game-container {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--canvas-bg);
+}
+
+#canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    outline: none;
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* ==========================================================================
+   Toolbar
+   ========================================================================== */
+
+#toolbar {
+    position: fixed;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 50;
+    display: flex;
+    gap: 0.4rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+#game-container:hover ~ #toolbar,
+#toolbar:hover {
+    opacity: 1;
+}
+
+#toolbar button {
+    width: 36px;
+    height: 36px;
+    background: var(--toolbar-bg);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+#toolbar button:hover {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ==========================================================================
+   Mobile Touch Controls
+   ========================================================================== */
+
+#controls-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    pointer-events: none;
+}
+
+#controls-overlay > * {
+    pointer-events: auto;
+}
+
+/* D-Pad */
+#dpad {
+    position: relative;
+    width: 130px;
+    height: 130px;
+}
+
+.dpad-btn {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.dpad-btn:active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.dpad-up    { top: 0;   left: 50%; transform: translateX(-50%); }
+.dpad-down  { bottom: 0; left: 50%; transform: translateX(-50%); }
+.dpad-left  { left: 0;  top: 50%;  transform: translateY(-50%); }
+.dpad-right { right: 0; top: 50%;  transform: translateY(-50%); }
+
+/* Action buttons */
+#action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.action-btn {
+    width: 56px;
+    height: 56px;
+    background: rgba(233, 69, 96, 0.25);
+    border: 2px solid rgba(233, 69, 96, 0.5);
+    border-radius: 50%;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.action-btn:active {
+    background: rgba(233, 69, 96, 0.5);
+}
+
+.action-btn-small {
+    width: 44px;
+    height: 44px;
+    font-size: 0.7rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 600px) {
+    #loading-title { font-size: 1.5rem; }
+    #loading-container { padding: 1rem; }
+}
+
+@media (min-width: 800px) {
+    /* Hide touch controls on desktop */
+    #controls-overlay { display: none !important; }
+}
+
+/* ==========================================================================
+   Fullscreen
+   ========================================================================== */
+
+:fullscreen #toolbar { opacity: 1; }
+:-webkit-full-screen #toolbar { opacity: 1; }

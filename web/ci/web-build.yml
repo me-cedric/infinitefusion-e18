@@ -1,0 +1,208 @@
+# ==========================================================================
+# Pokemon Infinite Fusion — Web Build CI
+# GitHub Actions workflow
+#
+# Triggers:
+#   - Push to develop/main branches (web/ directory changes)
+#   - Manual dispatch
+#
+# Steps:
+#   1. Build Docker image with mkxp-z + CRuby compiled to WASM
+#   2. Run asset pipeline
+#   3. Assemble dist/
+#   4. Upload artifacts / deploy to Pages
+# ==========================================================================
+
+name: Web Build
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'web/**'
+      - 'Data/**'
+      - 'Graphics/**'
+      - 'Audio/**'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to GitHub Pages'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: web-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_IMAGE: pif-web-builder
+  DIST_ARTIFACT: pif-web-dist
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Build WASM + Assets
+  # -----------------------------------------------------------------------
+  build:
+    name: Build Web Distribution
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('web/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        run: |
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --load \
+            -t ${{ env.DOCKER_IMAGE }} \
+            web/
+
+      - name: Run build pipeline
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/game:ro" \
+            -v "${{ github.workspace }}/web/dist:/build/web/dist" \
+            -e GAME_DIR=/game \
+            ${{ env.DOCKER_IMAGE }}
+
+      - name: Move Docker cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: List dist contents
+        run: |
+          echo "=== dist/ contents ==="
+          ls -lhR web/dist/
+          echo ""
+          echo "=== Size summary ==="
+          du -sh web/dist/
+          du -sh web/dist/assets/ 2>/dev/null || true
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DIST_ARTIFACT }}
+          path: web/dist/
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # Deploy to GitHub Pages (optional)
+  # -----------------------------------------------------------------------
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true')
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DIST_ARTIFACT }}
+          path: dist/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # -----------------------------------------------------------------------
+  # Validate build (smoke test)
+  # -----------------------------------------------------------------------
+  validate:
+    name: Validate Build Output
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.DIST_ARTIFACT }}
+          path: dist/
+
+      - name: Validate required files
+        run: |
+          echo "Checking required files..."
+          required_files=(
+            "dist/index.html"
+            "dist/shell.css"
+            "dist/shell.js"
+            "dist/sw.js"
+            "dist/game.js"
+            "dist/game.wasm"
+            "dist/game.data"
+            "dist/game-data.js"
+            "dist/manifest.json"
+          )
+          all_ok=true
+          for f in "${required_files[@]}"; do
+            if [ -f "$f" ]; then
+              size=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f")
+              echo "  OK: $f ($size bytes)"
+            else
+              echo "  MISSING: $f"
+              all_ok=false
+            fi
+          done
+          if [ "$all_ok" != "true" ]; then
+            echo "ERROR: Missing required files"
+            exit 1
+          fi
+
+      - name: Validate HTML structure
+        run: |
+          # Basic check that index.html references required scripts
+          grep -q 'game.js' dist/index.html && echo "OK: game.js referenced"
+          grep -q 'shell.js' dist/index.html && echo "OK: shell.js referenced"
+          grep -q 'canvas' dist/index.html && echo "OK: canvas element found"
+
+      - name: Validate manifest
+        run: |
+          python3 -c "
+          import json, sys
+          with open('dist/manifest.json') as f:
+              m = json.load(f)
+          print(f'Manifest version: {m.get(\"version\", \"?\")}')
+          print(f'Total assets: {m.get(\"total_files\", 0)}')
+          size_mb = m.get('total_size', 0) / (1024*1024)
+          print(f'Total size: {size_mb:.1f} MB')
+          if m.get('total_files', 0) == 0:
+              print('WARNING: No assets in manifest')
+              sys.exit(1)
+          "

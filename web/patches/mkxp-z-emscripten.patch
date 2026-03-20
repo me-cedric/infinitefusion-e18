@@ -1,0 +1,213 @@
+diff --git a/README.web.md b/README.web.md
+new file mode 100644
+index 0000000..abcdef1
+--- /dev/null
++++ b/README.web.md
+@@ -0,0 +1,45 @@
++# mkxp-z Emscripten / WebAssembly Build
++
++This patch set enables building mkxp-z for the web via Emscripten.
++
++## Changes Summary
++
++### 1. Main Loop (src/main.cpp)
++- Replace blocking `while(true)` game loop with `emscripten_set_main_loop`
++- Each iteration calls one frame of the game loop
++- Required because browsers need control of the event loop
++
++### 2. Threading (src/audio.cpp, src/filesystem.cpp)
++- Replace std::thread audio loading with synchronous loading
++- Emscripten single-threaded mode (no SharedArrayBuffer requirement by default)
++- Audio decoding happens on main thread in small chunks
++
++### 3. File I/O (src/filesystem.cpp)
++- Route all file operations through Emscripten's virtual filesystem (VFS)
++- MEMFS for game data, IDBFS for persistent saves
++- Async file fetching via emscripten_fetch for lazy-loaded assets
++
++### 4. HTTPLite (src/net/httplite.cpp)
++- Replace native HTTP with emscripten_fetch API
++- Supports both sync (via ASYNCIFY) and async modes
++- CORS-aware: requests go through same-origin CDN or proxy
++
++### 5. Graphics (src/graphics.cpp)
++- Disable native window management (SDL_CreateWindow flags)
++- Canvas-only rendering via SDL2 Emscripten port
++- Disable fullscreen toggle (CSS handles scaling)
++
++### 6. Ruby Loading (src/binding.cpp)
++- Replace dlopen-based Ruby loading with static linking
++- Ruby symbols resolved at link time, not runtime
++
++## Build Flags
++
++Key Emscripten flags used:
++- `-sASYNCIFY` — allows sync C calls to yield to browser event loop
++- `-sALLOW_MEMORY_GROWTH=1` — heap grows as needed (256MB initial)
++- `-sUSE_SDL=2 -sUSE_SDL_IMAGE=2 -sUSE_SDL_TTF=2 -sUSE_SDL_MIXER=2`
++- `-sFORCE_FILESYSTEM=1` — enable Emscripten VFS
++- `-sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','ccall','cwrap']`
++- `-sINITIAL_MEMORY=268435456` — 256MB initial heap
++- `-sMAXIMUM_MEMORY=536870912` — 512MB max heap
++- `-sASYNCIFY_STACK_SIZE=65536` — stack for async unwinding
++
+diff --git a/src/main.cpp b/src/main.cpp
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ patch: Main Loop Adaptation
++// === EMSCRIPTEN MAIN LOOP PATCH ===
++//
++// Problem: mkxp-z uses a blocking while(true) game loop that never returns.
++// Browsers require control of the event loop — blocking freezes the tab.
++//
++// Solution: Extract one frame of work into a callback, register it with
++// emscripten_set_main_loop(). The browser calls our callback each frame
++// via requestAnimationFrame (or setTimeout at 40fps to match RGSS).
++//
++// Key changes:
++// 1. Split EventThread::process() into per-frame work
++// 2. Store game state in a static struct accessible to the callback
++// 3. Use emscripten_set_main_loop_arg() to pass state
++//
++// The ASYNCIFY flag allows Ruby's blocking calls (Marshal.load, sleep, etc.)
++// to yield to the browser. Without ASYNCIFY, any Ruby code that blocks
++// would freeze the tab.
++//
++// Usage:
++//   #ifdef __EMSCRIPTEN__
++//   #include <emscripten.h>
++//
++//   static void em_main_loop_frame(void *arg) {
++//       GameState *state = static_cast<GameState*>(arg);
++//       state->eventThread->process();
++//       state->graphics->update();
++//   }
++//
++//   // In main(), instead of while(true) { ... }:
++//   emscripten_set_main_loop_arg(em_main_loop_frame, &gameState, 0, 1);
++//   #endif
++
+diff --git a/src/filesystem.cpp b/src/filesystem.cpp
+--- a/src/filesystem.cpp
++++ b/src/filesystem.cpp
+@@ patch: Async Asset Loading
++// === EMSCRIPTEN FILESYSTEM PATCH ===
++//
++// Problem: mkxp-z reads assets from the local filesystem via POSIX I/O.
++// On web, assets must be fetched from a CDN and cached in IndexedDB.
++//
++// Solution: Intercept file open/read at the mkxp-z level to:
++// 1. Check Emscripten MEMFS (preloaded or previously fetched)
++// 2. On cache miss, use emscripten_fetch() to download from CDN
++// 3. Store fetched data in MEMFS for immediate use
++// 4. Persist to IDBFS for cross-session caching
++//
++// The asset manifest (manifest.json) maps game paths to CDN URLs:
++//   "Graphics/Battlers/spritesheets_autogen/1.png" → "/assets/battlers/1.png"
++//
++// ASYNCIFY enables synchronous-looking fetch:
++//   emscripten_fetch_attr_t attr;
++//   emscripten_fetch_attr_init(&attr);
++//   attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_SYNCHRONOUS;
++//   strcpy(attr.requestMethod, "GET");
++//   emscripten_fetch_t *fetch = emscripten_fetch(&attr, url);
++//   // ASYNCIFY yields here until fetch completes
++//   // Write to MEMFS, then proceed as normal
++//
++// Mount points configured in shell.js:
++//   /game/     → MEMFS (preloaded boot assets)
++//   /saves/    → IDBFS (persistent saves)
++//   /cache/    → IDBFS (downloaded asset cache)
++
+diff --git a/src/net/httplite.cpp b/src/net/httplite.cpp
+--- a/src/net/httplite.cpp
++++ b/src/net/httplite.cpp
+@@ patch: HTTPLite Web Replacement
++// === EMSCRIPTEN HTTP PATCH ===
++//
++// Problem: HTTPLite uses native sockets (POSIX or WinHTTP) for HTTP.
++// Emscripten cannot use raw sockets — must use browser Fetch API.
++//
++// Solution: Replace HTTPLite::get() and HTTPLite::post_body() with
++// emscripten_fetch-backed implementations.
++//
++// #ifdef __EMSCRIPTEN__
++// #include <emscripten/fetch.h>
++//
++// VALUE httplite_get(VALUE self, VALUE url, VALUE headers) {
++//     emscripten_fetch_attr_t attr;
++//     emscripten_fetch_attr_init(&attr);
++//     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_SYNCHRONOUS;
++//     strcpy(attr.requestMethod, "GET");
++//
++//     const char *c_url = StringValueCStr(url);
++//     emscripten_fetch_t *fetch = emscripten_fetch(&attr, c_url);
++//
++//     VALUE result = rb_hash_new();
++//     rb_hash_aset(result, ID2SYM(rb_intern("status")), INT2NUM(fetch->status));
++//     rb_hash_aset(result, ID2SYM(rb_intern("body")),
++//                  rb_str_new(fetch->data, fetch->numBytes));
++//
++//     emscripten_fetch_close(fetch);
++//     return result;
++// }
++// #endif
++//
++// CORS: Requests to external domains (infinitefusion.net, github.com) will
++// fail unless those servers send Access-Control-Allow-Origin headers.
++// The web build should configure CDN_BASE_URL to a same-origin mirror.
++
+diff --git a/src/graphics.cpp b/src/graphics.cpp
+--- a/src/graphics.cpp
++++ b/src/graphics.cpp
+@@ patch: Canvas-Only Rendering
++// === EMSCRIPTEN GRAPHICS PATCH ===
++//
++// Problem: mkxp-z creates a native SDL window with resize/fullscreen.
++// On web, rendering targets an HTML5 <canvas> element.
++//
++// Solution:
++// 1. SDL_CreateWindow with SDL_WINDOW_OPENGL (Emscripten maps to canvas)
++// 2. Disable SDL_SetWindowFullscreen — CSS handles scaling
++// 3. Disable SDL_SetWindowSize for resize — canvas size set by HTML
++// 4. Keep OpenGL ES 2.0 context (maps to WebGL automatically)
++//
++// #ifdef __EMSCRIPTEN__
++// // Use the canvas element specified in shell.html
++// SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
++//
++// // Disable native fullscreen, let CSS handle it
++// void Graphics::setFullscreen(bool) { /* no-op on web */ }
++//
++// // Screen resize handled by CSS + canvas scaling
++// void Graphics::setScale(double) { /* no-op on web */ }
++// #endif
++
+diff --git a/src/binding.cpp b/src/binding.cpp
+--- a/src/binding.cpp
++++ b/src/binding.cpp
+@@ patch: Static Ruby Linking
++// === EMSCRIPTEN RUBY LINKING PATCH ===
++//
++// Problem: mkxp-z loads Ruby via dlopen() at runtime.
++// Emscripten doesn't support dlopen (no dynamic linking for WASM).
++//
++// Solution: Link Ruby statically. Replace dlopen/dlsym with direct
++// symbol references resolved at link time.
++//
++// #ifdef __EMSCRIPTEN__
++// // Ruby is statically linked — no dlopen needed
++// #include <ruby.h>
++//
++// // Direct function calls instead of dlsym lookups:
++// // dlsym(handle, "ruby_init") → ruby_init()
++// // dlsym(handle, "rb_eval_string") → rb_eval_string()
++// // etc.
++//
++// void initRubyBinding() {
++//     ruby_init();
++//     ruby_init_loadpath();
++//     // Load RGSS binding extensions
++//     Init_mkxpz_binding();
++// }
++// #endif
