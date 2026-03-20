@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+    <meta name="description" content="Pokemon Infinite Fusion - Play in your browser">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin">
+    <meta http-equiv="Cross-Origin-Embedder-Policy" content="require-corp">
+    <title>Pokemon Infinite Fusion</title>
+    <link rel="stylesheet" href="shell.css">
+    <link rel="preload" href="game.wasm" as="fetch" crossorigin>
+    <link rel="preload" href="game.js" as="script">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-overlay">
+        <div id="loading-container">
+            <h1 id="loading-title">Pokemon Infinite Fusion</h1>
+            <div id="loading-subtitle">Web Edition</div>
+            <div id="progress-container">
+                <div id="progress-bar"><div id="progress-fill"></div></div>
+                <div id="progress-text">Initializing...</div>
+            </div>
+            <div id="loading-details"></div>
+            <div id="error-container" style="display:none">
+                <div id="error-icon">&#x26A0;&#xFE0F;</div>
+                <div id="error-title">Something went wrong</div>
+                <div id="error-message"></div>
+                <button id="error-retry" onclick="location.reload()">Retry</button>
+            </div>
+        </div>
+        <div id="compat-warning" style="display:none">
+            <p><strong>Browser not supported.</strong></p>
+            <p>Requires WebAssembly and WebGL.<br>Use Chrome 90+, Firefox 90+, Safari 16+, or Edge 90+.</p>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <div id="game-container">
+        <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    </div>
+
+    <!-- Mobile Touch Controls -->
+    <div id="controls-overlay" style="display:none">
+        <div id="dpad">
+            <button class="dpad-btn dpad-up" data-key="ArrowUp">&#9650;</button>
+            <button class="dpad-btn dpad-left" data-key="ArrowLeft">&#9664;</button>
+            <button class="dpad-btn dpad-right" data-key="ArrowRight">&#9654;</button>
+            <button class="dpad-btn dpad-down" data-key="ArrowDown">&#9660;</button>
+        </div>
+        <div id="action-buttons">
+            <button class="action-btn" data-key="z" id="btn-a">A</button>
+            <button class="action-btn" data-key="x" id="btn-b">B</button>
+            <button class="action-btn action-btn-small" data-key="Enter" id="btn-start">Start</button>
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <button id="btn-fullscreen" title="Toggle fullscreen">&#x26F6;</button>
+        <button id="btn-mute" title="Toggle audio">&#x1F50A;</button>
+        <button id="btn-save-reminder" title="Saves stored in browser">&#x1F4BE;</button>
+    </div>
+
+    <script src="game-data.js"></script>
+    <script src="game.js"></script>
+    <script src="shell.js"></script>
+</body>
+</html>
